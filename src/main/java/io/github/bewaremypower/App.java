@@ -142,7 +142,7 @@ public class App implements Callable<Integer> {
       paths.add(getPath(i % 30));
     }
 
-    final var limiter = RateLimiter.create(rate);
+    var limiter = RateLimiter.create(rate);
     final var futures = new ArrayList<CompletableFuture<Long>>();
 
     for (final var path : paths) {
@@ -153,7 +153,9 @@ public class App implements Callable<Integer> {
               .thenApply(__ -> TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)));
     }
     log.info("Latencies of ZK getData: {}", futures.stream().map(CompletableFuture::join).toList());
+
     futures.clear();
+    limiter = RateLimiter.create(rate);
 
     for (final var path : paths) {
       limiter.acquire();
