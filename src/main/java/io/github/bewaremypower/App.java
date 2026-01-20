@@ -62,7 +62,7 @@ public class App implements Callable<Integer> {
   @Option(
       names = {"-n"},
       description = "Number of get requests to perform (default: ${DEFAULT-VALUE})",
-      defaultValue = "300")
+      defaultValue = "1000")
   private int numRequests;
 
   @Option(
@@ -70,6 +70,12 @@ public class App implements Callable<Integer> {
       description = "Batch size for metadata store (default: ${DEFAULT-VALUE})",
       defaultValue = "1000")
   private int batchSize;
+
+  @Option(
+      names = {"--warm-up-count"},
+      description = "Number of warm-up get requests (default: ${DEFAULT-VALUE})",
+      defaultValue = "500")
+  private int warmUpCount;
 
   @Override
   public Integer call() throws Exception {
@@ -112,7 +118,7 @@ public class App implements Callable<Integer> {
                     }))
             .build();
     log.info("Warming up...");
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < warmUpCount; i++) {
       final var path = getPath(i);
       final var result1 = metadataStore.get(path).get();
       final var result2 = get(zooKeeper, path, executor).get();
