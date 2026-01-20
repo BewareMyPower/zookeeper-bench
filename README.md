@@ -15,3 +15,7 @@ java -jar ./target/app-1.0-SNAPSHOT.jar 127.0.0.1:2181
 grep Latencies logs/application.log > outputs.txt
 python3 analyze_latencies.py outputs.txt
 ```
+
+## Example test report
+
+See [report.md](./report.md).

@@ -98,6 +98,7 @@ def analyze_latencies(filename: str):
             max_latency = max(latencies)
             avg_latency = statistics.mean(latencies)
             median_latency = statistics.median(latencies)
+            p90 = calculate_percentile(latencies, 90)
             p99 = calculate_percentile(latencies, 99)
             p100 = calculate_percentile(latencies, 100)  # This is the same as max
             
@@ -106,6 +107,7 @@ def analyze_latencies(filename: str):
             print(f"  Min:          {min_latency:.2f} ms")
             print(f"  Average:      {avg_latency:.2f} ms")
             print(f"  Median (P50): {median_latency:.2f} ms")
+            print(f"  P90:          {p90:.2f} ms")
             print(f"  P99:          {p99:.2f} ms")
             print(f"  P100 (Max):   {p100:.2f} ms")
             print()
