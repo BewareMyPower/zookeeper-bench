@@ -9,69 +9,71 @@ This report compares the read performance of Pulsar's `ZkMetadataStore` and the 
 ```
 Line 1: ZK getData
   Min:          1.00 ms
-  Average:      1.22 ms
+  Average:      1.46 ms
   Median (P50): 1.00 ms
-  P99:          3.00 ms
-  P100 (Max):   4.00 ms
+  P90:          2.00 ms
+  P99:          4.00 ms
+  P100 (Max):   7.00 ms
 
 Line 2: metadata store get
-  Min:          2.00 ms
-  Average:      2.44 ms
-  Median (P50): 2.00 ms
-  P99:          4.01 ms
-  P100 (Max):   6.00 ms
+  Min:          3.00 ms
+  Average:      4.38 ms
+  Median (P50): 4.00 ms
+  P90:          5.00 ms
+  P99:          7.00 ms
+  P100 (Max):   12.00 ms
 ```
 
 The default rate is 100 ops per second.
 
-## Case 2: batch size is 1
+## Case 2: batching disabled
 
-Options: `--batch-size 1`
+Options: `--batch-size 0`
 
 [outputs.txt](./example-results/batch-size-0.txt)
 
 ```
 Line 1: ZK getData
   Min:          1.00 ms
-  Average:      2.62 ms
-  Median (P50): 2.00 ms
-  P90:          4.00 ms
-  P99:          8.00 ms
-  P100 (Max):   12.00 ms
+  Average:      1.67 ms
+  Median (P50): 1.00 ms
+  P90:          3.00 ms
+  P99:          5.00 ms
+  P100 (Max):   13.00 ms
 
 Line 2: metadata store get
   Min:          1.00 ms
-  Average:      2.73 ms
+  Average:      2.31 ms
   Median (P50): 2.00 ms
   P90:          4.00 ms
-  P99:          7.00 ms
-  P100 (Max):   12.00 ms
+  P99:          6.00 ms
+  P100 (Max):   15.00 ms
 ```
 
-The `multi` call performance is similar to the trivial `getData` call overhead.
-
-This case ensures no queueing latency from `ZkMetadataStore` side, which shows the `multi` call overhead.
+The overhead of `ZkMetadataStore` without batching is small.
 
 ## Case 3: low get rate
 
-Options: `--rate 5 -n 100`
+Options: `--rate 5 -n 300`
 
 [outputs.txt](./example-results/rate-5.txt)
 
 ```
 Line 1: ZK getData
   Min:          1.00 ms
-  Average:      1.36 ms
-  Median (P50): 1.00 ms
-  P99:          4.01 ms
-  P100 (Max):   5.00 ms
+  Average:      1.95 ms
+  Median (P50): 2.00 ms
+  P90:          3.00 ms
+  P99:          5.00 ms
+  P100 (Max):   7.00 ms
 
 Line 2: metadata store get
-  Min:          5.00 ms
-  Average:      5.41 ms
-  Median (P50): 5.00 ms
-  P99:          7.06 ms
-  P100 (Max):   13.00 ms
+  Min:          3.00 ms
+  Average:      3.58 ms
+  Median (P50): 3.00 ms
+  P90:          5.00 ms
+  P99:          7.00 ms
+  P100 (Max):   8.00 ms
 ```
 
 As expected, in this case, with the default configuration, the `ZkMetadataStore` always has 5ms extra latency.
@@ -85,47 +87,21 @@ Options: `--rate 1000 -n 1000`
 ```
 Line 1: ZK getData
   Min:          0.00 ms
-  Average:      0.49 ms
-  Median (P50): 0.00 ms
-  P90:          1.00 ms
-  P99:          3.00 ms
-  P100 (Max):   22.00 ms
+  Average:      5.04 ms
+  Median (P50): 2.00 ms
+  P90:          15.00 ms
+  P99:          28.00 ms
+  P100 (Max):   37.00 ms
 
 Line 2: metadata store get
   Min:          1.00 ms
-  Average:      3.71 ms
+  Average:      3.89 ms
   Median (P50): 4.00 ms
   P90:          6.00 ms
-  P99:          9.00 ms
-  P100 (Max):   25.00 ms
+  P99:          15.00 ms
+  P100 (Max):   19.00 ms
 ```
 
-Even in this case, the latency of `ZkMetadataStore` that has batching mechanism is still higher than the trivial `getData` call.
+In this case, the tailing latencies (P90 or higher) of `ZkMetadataStore` are significantly better than the direct `getData` calls.
 
 Actually it's an extreme case because generally we should not have such a high read rate in production. For example, in a production Pulsar cluster that as ~100 MB/s produce traffic and ~200 MB/s consume traffic on ~70000 topics, the total metadata rate is about 100 ops per second and most brokers have less than 3 ops per second.
-
-## Case 5: very high get rate
-
-Options: `--rate 2000 -n 2000`
-
-[outputs.txt](./example-results/rate-2000.txt)
-
-```
-Line 1: ZK getData
-  Min:          0.00 ms
-  Average:      3.72 ms
-  Median (P50): 1.00 ms
-  P90:          8.00 ms
-  P99:          37.01 ms
-  P100 (Max):   44.00 ms
-
-Line 2: metadata store get
-  Min:          1.00 ms
-  Average:      4.67 ms
-  Median (P50): 4.00 ms
-  P90:          8.00 ms
-  P99:          12.00 ms
-  P100 (Max):   15.00 ms
-```
-
-Only in this extreme case, the batching mechanism helps to reduce the tailing latency, but the average latency and median latency of trivial `getData` call are still better.
