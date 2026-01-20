@@ -41,3 +41,4 @@ dependency-reduced-pom.xml
 
 # Log from application
 logs/application.log
+outputs.txt

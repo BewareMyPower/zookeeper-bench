@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze latencies from example-outputs.txt file.
+Analyze latencies from outputs.txt file.
 Each line contains a log entry with a list of latencies in milliseconds.
 Calculates and compares P99 and P100 (max) latencies for each line.
 """
@@ -103,28 +103,11 @@ def analyze_latencies(filename: str):
             
             # Print results
             print(f"Line {line_number}: {operation_name}")
-            print(f"  Sample count: {count}")
             print(f"  Min:          {min_latency:.2f} ms")
             print(f"  Average:      {avg_latency:.2f} ms")
             print(f"  Median (P50): {median_latency:.2f} ms")
             print(f"  P99:          {p99:.2f} ms")
             print(f"  P100 (Max):   {p100:.2f} ms")
-            
-            # Compare P99 and P100
-            difference = p100 - p99
-            percentage_diff = (difference / p99 * 100) if p99 > 0 else 0
-            
-            print(f"\n  P99 vs P100 Comparison:")
-            print(f"    Difference:   {difference:.2f} ms")
-            print(f"    % Increase:   {percentage_diff:.2f}%")
-            
-            if percentage_diff > 50:
-                print(f"    ⚠️  Significant outlier detected! P100 is {percentage_diff:.1f}% higher than P99")
-            elif percentage_diff > 20:
-                print(f"    ⚡ Notable difference between P99 and P100")
-            else:
-                print(f"    ✓  P99 and P100 are relatively close")
-            
             print()
     
     print("=" * 80)
@@ -133,7 +116,7 @@ def analyze_latencies(filename: str):
 if __name__ == "__main__":
     import sys
     
-    filename = "example-outputs.txt"
+    filename = "outputs.txt"
     
     # Allow custom filename as command line argument
     if len(sys.argv) > 1:

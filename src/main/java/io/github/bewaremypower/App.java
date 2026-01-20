@@ -21,10 +21,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.metastore.MetastoreException;
 import org.apache.bookkeeper.zookeeper.BoundExponentialBackoffRetryPolicy;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.metadata.api.GetResult;
@@ -57,14 +59,43 @@ public class App implements Callable<Integer> {
       defaultValue = "100")
   private int rate;
 
+  @Option(
+      names = {"-n"},
+      description = "Number of get requests to perform (default: ${DEFAULT-VALUE})",
+      defaultValue = "300")
+  private int numRequests;
+
+  @Option(
+      names = {"--batch-size"},
+      description = "Batch size for metadata store (default: ${DEFAULT-VALUE})",
+      defaultValue = "1000")
+  private int batchSize;
+
   @Override
   public Integer call() throws Exception {
-    log.info("ZooKeeper URL: {}", zkUrl);
-    log.info("Request rate: {} req/s", rate);
+    log.info("ZooKeeper URL: {}, batch size: {}", zkUrl, batchSize);
+
+    try (final var metadataStore =
+        MetadataStoreFactory.create(zkUrl, MetadataStoreConfig.builder().build())) {
+      for (int i = 0; i < 20; i++) {
+        final var path =
+            "/managed-ledgers/"
+                + TopicName.get("my-topic-" + i).getPartition(0).getPersistenceNamingEncoding();
+        final var data = ("metadata-for-my-topic-" + i).getBytes();
+        try {
+          metadataStore.put(path, data, Optional.empty()).get();
+        } catch (Exception ignored) {
+        }
+      }
+    } catch (Exception e) {
+      log.error("Failed to create metadata store", e);
+      return 1;
+    }
+
     @Cleanup
     final var metadataStore =
         MetadataStoreFactory.create(
-            zkUrl, MetadataStoreConfig.builder().batchingMaxOperations(1).build());
+            zkUrl, MetadataStoreConfig.builder().batchingMaxOperations(batchSize).build());
     final var executor = Executors.newSingleThreadExecutor();
     final var zooKeeper =
         PulsarZooKeeperClient.newBuilder()
@@ -80,73 +111,95 @@ public class App implements Callable<Integer> {
                       }
                     }))
             .build();
-    // warm up
-    for (int i = 0; i < 10; i++) {
-      final var path =
-          TopicName.get("my-topic-" + i).getPartition(0).getPersistenceNamingEncoding();
-      try {
-        metadataStore.put(path, new byte[0], Optional.empty()).get();
-      } catch (Exception ignored) {
+    log.info("Warming up...");
+    for (int i = 0; i < 100; i++) {
+      final var path = getPath(i);
+      final var result1 = metadataStore.get(path).get();
+      final var result2 = get(zooKeeper, path, executor).get();
+      if (result1.isPresent()) {
+        if (result2.isEmpty()) {
+          throw new IllegalStateException("Inconsistent results for path " + path);
+        }
+        if (!result1.get().equals(result2.get())) {
+          throw new IllegalStateException("Inconsistent results for path " + path);
+        }
+      } else {
+        if (result2.isPresent()) {
+          throw new IllegalStateException("Inconsistent results for path " + path);
+        }
       }
     }
+    log.info("Warm up is done");
 
     final var paths = new ArrayList<String>();
-    for (int i = 0; i < rate; i++) {
-      paths.add(
-          "/managed-ledgers/"
-              + TopicName.get("my-topic-" + (i % 15))
-                  .getPartition(0)
-                  .getPersistenceNamingEncoding());
+    for (int i = 0; i < numRequests; i++) {
+      paths.add(getPath(i % 30));
     }
 
     final var limiter = RateLimiter.create(rate);
     final var futures = new ArrayList<CompletableFuture<Long>>();
-    for (int i = 0; i < rate; i++) {
+
+    for (final var path : paths) {
+      limiter.acquire();
+      final var start = System.nanoTime();
+      futures.add(
+          get(zooKeeper, path, executor)
+              .thenApply(__ -> TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)));
+    }
+    log.info("Latencies of ZK getData: {}", futures.stream().map(CompletableFuture::join).toList());
+    futures.clear();
+
+    for (final var path : paths) {
       limiter.acquire();
       final var start = System.nanoTime();
       futures.add(
           metadataStore
-              .get(paths.get(i % paths.size()))
+              .get(path)
               .thenApply(v -> TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)));
     }
     log.info(
         "Latencies of metadata store get: {}",
         futures.stream().map(CompletableFuture::join).toList());
-    futures.clear();
-
-    for (int i = 0; i < rate; i++) {
-      limiter.acquire();
-      final var start = System.nanoTime();
-      final var future = new CompletableFuture<Optional<GetResult>>();
-      zooKeeper.getData(
-          paths.get(i % paths.size()),
-          null,
-          (rc, path, ctx, data, zkStat) -> {
-            executor.execute(
-                () -> {
-                  final var code = Code.get(rc);
-                  if (code == Code.OK) {
-                    final var stat =
-                        new Stat(
-                            path,
-                            zkStat.getVersion(),
-                            zkStat.getCtime(),
-                            zkStat.getMtime(),
-                            zkStat.getEphemeralOwner() != 0L,
-                            zkStat.getEphemeralOwner() == zooKeeper.getSessionId());
-                    future.complete(Optional.of(new GetResult(data, stat)));
-                  } else {
-                    future.complete(Optional.empty());
-                  }
-                });
-          },
-          null);
-      futures.add(future.thenApply(__ -> TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)));
-    }
-    log.info("Latencies of ZK getData: {}", futures.stream().map(CompletableFuture::join).toList());
 
     executor.shutdown();
     return 0;
+  }
+
+  // The topic `my-topic-<i>-partition-0`'s metadata path in Pulsar
+  private static String getPath(int i) {
+    return "/managed-ledgers/"
+        + TopicName.get("my-topic-" + i).getPartition(0).getPersistenceNamingEncoding();
+  }
+
+  private static CompletableFuture<Optional<GetResult>> get(
+      PulsarZooKeeperClient zkc, String path, Executor executor) {
+    final var future = new CompletableFuture<Optional<GetResult>>();
+    zkc.getData(
+        path,
+        null,
+        (rc, p, ctx, data, zkStat) -> {
+          executor.execute(
+              () -> {
+                final var code = Code.get(rc);
+                if (code == Code.OK) {
+                  final var stat =
+                      new Stat(
+                          path,
+                          zkStat.getVersion(),
+                          zkStat.getCtime(),
+                          zkStat.getMtime(),
+                          zkStat.getEphemeralOwner() != 0L,
+                          zkStat.getEphemeralOwner() == zkc.getSessionId());
+                  future.complete(Optional.of(new GetResult(data, stat)));
+                } else if (code == Code.NONODE) {
+                  future.complete(Optional.empty());
+                } else {
+                  future.completeExceptionally(new MetastoreException("ZK error: " + code));
+                }
+              });
+        },
+        null);
+    return future;
   }
 
   public static void main(String[] args) {
