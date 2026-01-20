@@ -28,23 +28,27 @@ The default rate is 100 ops per second.
 
 Options: `--batch-size 1`
 
-[outputs.txt](./example-results/batch-size-1.txt)
+[outputs.txt](./example-results/batch-size-0.txt)
 
 ```
 Line 1: ZK getData
   Min:          1.00 ms
-  Average:      1.28 ms
-  Median (P50): 1.00 ms
-  P99:          4.00 ms
-  P100 (Max):   6.00 ms
+  Average:      2.62 ms
+  Median (P50): 2.00 ms
+  P90:          4.00 ms
+  P99:          8.00 ms
+  P100 (Max):   12.00 ms
 
 Line 2: metadata store get
-  Min:          3.00 ms
-  Average:      3.27 ms
-  Median (P50): 3.00 ms
-  P99:          5.01 ms
-  P100 (Max):   6.00 ms
+  Min:          1.00 ms
+  Average:      2.73 ms
+  Median (P50): 2.00 ms
+  P90:          4.00 ms
+  P99:          7.00 ms
+  P100 (Max):   12.00 ms
 ```
+
+The `multi` call performance is similar to the trivial `getData` call overhead.
 
 This case ensures no queueing latency from `ZkMetadataStore` side, which shows the `multi` call overhead.
 
